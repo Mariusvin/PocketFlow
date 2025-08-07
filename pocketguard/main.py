@@ -68,11 +68,13 @@ async def handle_webhook(request: Request):
         installation_id = body["installation"]["id"]
         repo_name = body["repository"]["full_name"]
         pr_number = body["pull_request"]["number"]
+        pr_head_sha = body["pull_request"]["head"]["sha"]
 
         run_code_analysis.delay(
             installation_id=installation_id,
             repo_name=repo_name,
-            pr_number=pr_number
+            pr_number=pr_number,
+            pr_head_sha=pr_head_sha
         )
         print(f"Queued analysis for {repo_name} PR #{pr_number}")
 

@@ -17,7 +17,7 @@ class TestMain(unittest.TestCase):
             "action": "opened",
             "installation": {"id": 123},
             "repository": {"full_name": "test/repo"},
-            "pull_request": {"number": 1}
+            "pull_request": {"number": 1, "head": {"sha": "test_sha"}}
         }
 
         response = self.client.post("/webhooks", json=payload, headers={"x-hub-signature-256": "sha256=test"})
@@ -28,7 +28,8 @@ class TestMain(unittest.TestCase):
         mock_delay.assert_called_once_with(
             installation_id=123,
             repo_name="test/repo",
-            pr_number=1
+            pr_number=1,
+            pr_head_sha="test_sha"
         )
 
     @patch('pocketguard.main.verify_signature')
