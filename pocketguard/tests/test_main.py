@@ -8,15 +8,10 @@ class TestMain(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    @patch('pocketguard.main.open', new_callable=unittest.mock.mock_open, read_data='test key')
     @patch('pocketguard.main.verify_signature')
-    @patch('pocketguard.main.get_installation_access_token')
-    @patch('pocketguard.flow.SecretScannerAgent')
-    def test_handle_webhook_pull_request_opened(self, mock_agent, mock_get_token, mock_verify_signature, mock_open):
+    @patch('pocketguard.celery_worker.run_code_analysis.delay')
+    def test_handle_webhook_pull_request_opened(self, mock_delay, mock_verify_signature):
         mock_verify_signature.return_value = None
-        mock_get_token.return_value = "test_token"
-        mock_agent_instance = mock_agent.return_value
-        mock_agent_instance.run.return_value = {"status": "completed"}
 
         payload = {
             "action": "opened",
@@ -30,9 +25,11 @@ class TestMain(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
         mock_verify_signature.assert_called_once()
-        mock_get_token.assert_called_once_with(123)
-        mock_agent.assert_called_once()
-        mock_agent_instance.run.assert_called_once()
+        mock_delay.assert_called_once_with(
+            installation_id=123,
+            repo_name="test/repo",
+            pr_number=1
+        )
 
     @patch('pocketguard.main.verify_signature')
     def test_handle_webhook_ping_event(self, mock_verify_signature):
@@ -42,6 +39,30 @@ class TestMain(unittest.TestCase):
         response = self.client.post("/webhooks", json=payload, headers={"x-hub-signature-256": "sha256=test"})
 
         self.assertEqual(response.status_code, 200)
+
+    def test_github_auth(self):
+        response = self.client.get("/auth/github")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("https://github.com/login/oauth/authorize", response.json()["url"])
+
+    @patch('requests.post')
+    def test_github_auth_callback(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"access_token": "test_token"}
+
+        response = self.client.get("/auth/github/callback?code=test_code")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["access_token"], "test_token")
+
+    def test_get_user_me(self):
+        response = self.client.get("/api/user/me", headers={"Authorization": "Bearer test_token"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["username"], "testuser")
+
+    def test_get_user_repositories(self):
+        response = self.client.get("/api/user/repositories", headers={"Authorization": "Bearer test_token"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 2)
 
 if __name__ == "__main__":
     unittest.main()

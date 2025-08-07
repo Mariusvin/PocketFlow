@@ -4,7 +4,7 @@ import hmac
 import hashlib
 import jwt
 import requests
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -63,22 +63,88 @@ async def handle_webhook(request: Request):
     print("Webhook verified and received!")
 
     if "installation" in body and body.get("action") in ["opened", "reopened", "synchronize"]:
+        from pocketguard.celery_worker import run_code_analysis
+
         installation_id = body["installation"]["id"]
-        token = get_installation_access_token(installation_id)
-        print(f"Generated installation token: {token[:10]}...")
-
-        from github import Github
-        from pocketguard.flow import SecretScannerAgent
-
-        github_client = Github(token)
         repo_name = body["repository"]["full_name"]
         pr_number = body["pull_request"]["number"]
 
-        agent = SecretScannerAgent()
-        agent.run(github_client=github_client, repo_name=repo_name, pr_number=pr_number)
+        run_code_analysis.delay(
+            installation_id=installation_id,
+            repo_name=repo_name,
+            pr_number=pr_number
+        )
+        print(f"Queued analysis for {repo_name} PR #{pr_number}")
 
     return {"status": "ok"}
 
 @app.get("/")
 async def root():
     return {"message": "PocketGuard is running!"}
+
+
+@app.get("/auth/github")
+async def github_auth():
+    """
+    Redirects the user to GitHub for authentication.
+    """
+    github_client_id = os.getenv("GITHUB_CLIENT_ID")
+    return {
+        "message": "Redirecting to GitHub...",
+        "url": f"https://github.com/login/oauth/authorize?client_id={github_client_id}"
+    }
+
+@app.get("/auth/github/callback")
+async def github_auth_callback(code: str):
+    """
+    Handles the callback from GitHub after authentication.
+    """
+    github_client_id = os.getenv("GITHUB_CLIENT_ID")
+    github_client_secret = os.getenv("GITHUB_CLIENT_SECRET")
+
+    params = {
+        "client_id": github_client_id,
+        "client_secret": github_client_secret,
+        "code": code
+    }
+    headers = {"Accept": "application/json"}
+
+    response = requests.post("https://github.com/login/oauth/access_token", params=params, headers=headers)
+    response.raise_for_status()
+
+    access_token = response.json()["access_token"]
+
+    # Here you would typically use the access token to get user info,
+    # create a user record in your database, and create a session.
+
+    return {"message": "Authentication successful!", "access_token": access_token}
+
+
+# Placeholder for an authentication dependency
+def get_current_user(request: Request):
+    # In a real application, this would verify a session token or JWT
+    # and return the authenticated user's data.
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # Mock user data
+    return {"id": 1, "github_id": 99, "username": "testuser"}
+
+@app.get("/api/user/me")
+async def get_user_me(user: dict = Depends(get_current_user)):
+    """
+    Returns the authenticated user's profile.
+    """
+    return user
+
+@app.get("/api/user/repositories")
+async def get_user_repositories(user: dict = Depends(get_current_user)):
+    """
+    Returns a list of repositories for the authenticated user.
+    """
+    # Mock data
+    return [
+        {"id": 123, "name": "test/repo", "enabled": True},
+        {"id": 456, "name": "test/another-repo", "enabled": False},
+    ]
