@@ -36,6 +36,42 @@ router.post('/', express.json(), async (req, res) => {
   res.status(201).json(newWorkflow);
 });
 
+// GET /api/workflows/:id - Get a single workflow
+router.get('/:id', (req, res) => {
+  const { id } = req.params;
+  const workflow = mockWorkflows.find(wf => wf.id === id);
+  if (workflow) {
+    res.json(workflow);
+  } else {
+    res.status(404).json({ error: 'Workflow not found.' });
+  }
+});
+
+// PUT /api/workflows/:id - Update a workflow
+router.put('/:id', express.json(), (req, res) => {
+  const { id } = req.params;
+  const { name, description, flow_data } = req.body;
+
+  const workflowIndex = mockWorkflows.findIndex(wf => wf.id === id);
+
+  if (workflowIndex === -1) {
+    return res.status(404).json({ error: 'Workflow not found.' });
+  }
+
+  const updatedWorkflow = {
+    ...mockWorkflows[workflowIndex],
+    name: name ?? mockWorkflows[workflowIndex].name,
+    description: description ?? mockWorkflows[workflowIndex].description,
+    flow_data: flow_data ?? mockWorkflows[workflowIndex].flow_data,
+    updated_at: new Date(),
+  };
+
+  mockWorkflows[workflowIndex] = updatedWorkflow;
+
+  res.json(updatedWorkflow);
+});
+
+
 // DELETE /api/workflows/:id - Delete a workflow
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
