@@ -1,0 +1,46 @@
+{
+  "hash": "d2b8c87c",
+  "configHash": "68be0745",
+  "lockfileHash": "23523b86",
+  "browserHash": "84395c59",
+  "optimized": {
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "a1085984",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "296b18bf",
+      "needsInterop": true
+    },
+    "react-flow": {
+      "src": "../../node_modules/react-flow/index.js",
+      "file": "react-flow.js",
+      "fileHash": "196f6c06",
+      "needsInterop": true
+    },
+    "zustand": {
+      "src": "../../node_modules/zustand/esm/index.mjs",
+      "file": "zustand.js",
+      "fileHash": "bc2488c4",
+      "needsInterop": false
+    },
+    "uuid": {
+      "src": "../../node_modules/uuid/dist/esm-browser/index.js",
+      "file": "uuid.js",
+      "fileHash": "525dd197",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-3VDXVL42": {
+      "file": "chunk-3VDXVL42.js"
+    },
+    "chunk-5WRI5ZAA": {
+      "file": "chunk-5WRI5ZAA.js"
+    }
+  }
+}
