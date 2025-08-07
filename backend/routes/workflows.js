@@ -86,4 +86,36 @@ router.delete('/:id', (req, res) => {
   res.status(204).send(); // No Content
 });
 
+// POST /api/workflows/:id/run - Run a workflow
+router.post('/:id/run', (req, res) => {
+  const { id } = req.params;
+  const workflow = mockWorkflows.find(wf => wf.id === id);
+
+  if (!workflow) {
+    return res.status(404).json({ error: 'Workflow not found.' });
+  }
+
+  // In a real application, this is where you would interface with `The-Pocket/Flow`.
+  // You would take `workflow.flow_data`, convert it into a format the Flow framework
+  // can understand, and then execute it. The logs would be captured from the
+  // framework's execution stream.
+
+  console.log(`Simulating run for workflow: ${workflow.name}`);
+  console.log('Flow data:', JSON.stringify(workflow.flow_data, null, 2));
+
+  // Simulate a short delay and return mock logs.
+  setTimeout(() => {
+    res.json({
+      success: true,
+      logs: [
+        `[${new Date().toISOString()}] INFO: Starting execution for workflow: ${workflow.name}`,
+        `[${new Date().toISOString()}] INFO: Found ${workflow.flow_data?.nodes?.length || 0} nodes and ${workflow.flow_data?.edges?.length || 0} edges.`,
+        `[${new Date().toISOString()}] INFO: Executing node 1...`,
+        `[${new Date().toISOString()}] INFO: Executing node 2...`,
+        `[${new Date().toISOString()}] INFO: Workflow execution finished successfully.`,
+      ],
+    });
+  }, 1500);
+});
+
 module.exports = router;

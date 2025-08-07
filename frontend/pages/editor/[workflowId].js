@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import ReactFlow, { useNodesState, useEdgesState, addEdge } from 'reactflow';
 import Canvas from '../../features/editor/Canvas';
 import NodePanel from '../../features/editor/NodePanel';
-import { getWorkflow, updateWorkflow } from '../../lib/api';
+import LogViewer from '../../features/editor/LogViewer';
+import { getWorkflow, updateWorkflow, runWorkflow } from '../../lib/api';
 import 'reactflow/dist/style.css';
 
 let id = 0;
@@ -16,8 +17,10 @@ const WorkflowEditor = ({ workflowId }) => {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [workflowName, setWorkflowName] = useState('Loading...');
+  const [logs, setLogs] = useState([]);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
 
   useEffect(() => {
     if (workflowId) {
@@ -49,6 +52,21 @@ const WorkflowEditor = ({ workflowId }) => {
     }
   };
 
+  const handleRun = async () => {
+    setIsRunning(true);
+    setError(null);
+    setLogs(['Running workflow...']);
+    try {
+      const result = await runWorkflow(workflowId);
+      setLogs(result.logs);
+    } catch (err) {
+      setError('Failed to run workflow.');
+      setLogs((prev) => [...prev, 'Error: Failed to run workflow.']);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
   const onDragOver = useCallback((event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -57,28 +75,14 @@ const WorkflowEditor = ({ workflowId }) => {
   const onDrop = useCallback(
     (event) => {
       event.preventDefault();
-
       const type = event.dataTransfer.getData('application/reactflow');
-      if (typeof type === 'undefined' || !type) {
-        return;
-      }
-
-      const position = reactFlowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-      const newNode = {
-        id: getId(),
-        type,
-        position,
-        data: { label: `${type} node` },
-      };
-
+      if (typeof type === 'undefined' || !type) return;
+      const position = reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const newNode = { id: getId(), type, position, data: { label: `${type} node` } };
       setNodes((nds) => nds.concat(newNode));
     },
     [reactFlowInstance, setNodes]
   );
-
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }} ref={reactFlowWrapper}>
@@ -89,27 +93,33 @@ const WorkflowEditor = ({ workflowId }) => {
         <h1>{workflowName}</h1>
         <div>
           {error && <span style={{ color: 'red', marginRight: '1rem' }}>{error}</span>}
-          <button onClick={handleSave} disabled={isSaving} style={{ padding: '0.5rem 1rem', cursor: 'pointer' }}>
+          <button onClick={handleSave} disabled={isSaving || isRunning} style={{ padding: '0.5rem 1rem', cursor: 'pointer', marginRight: '0.5rem' }}>
             {isSaving ? 'Saving...' : 'Save'}
+          </button>
+          <button onClick={handleRun} disabled={isSaving || isRunning} style={{ padding: '0.5rem 1rem', cursor: 'pointer', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}>
+            {isRunning ? 'Running...' : 'Run'}
           </button>
         </div>
       </header>
-      <div style={{ flex: 1, display: 'flex' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <NodePanel />
-        <div style={{ flex: 1 }} >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onInit={setReactFlowInstance}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            fitView
-          >
-            <Canvas />
-          </ReactFlow>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1 }}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onInit={setReactFlowInstance}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              fitView
+            >
+              <Canvas />
+            </ReactFlow>
+          </div>
+          <LogViewer logs={logs} />
         </div>
       </div>
     </div>
