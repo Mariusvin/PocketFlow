@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flow Conductor</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { text-align: center; }
+        input { padding: 10px; width: 300px; }
+        button { padding: 10px 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Flow Conductor</h1>
+        <p>Enter a topic to generate an article:</p>
+        <form id="start-form">
+            <input type="text" id="topic" name="topic" placeholder="e.g., 'The Future of AI'" required>
+            <br><br>
+            <button type="submit">Start Workflow</button>
+        </form>
+    </div>
+    <script>
+        document.getElementById('start-form').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const topic = document.getElementById('topic').value;
+            const formData = new FormData();
+            formData.append('topic', topic);
+
+            const response = await fetch('/start-job', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            window.location.href = `/progress.html?job_id=${data.job_id}&topic=${encodeURIComponent(topic)}`;
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Progress</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #progress-container { border: 1px solid #ccc; padding: 20px; }
+        #final-article { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Workflow Progress</h1>
+    <p><strong>Topic:</strong> <span id="topic"></span></p>
+    <div id="progress-container">
+        <p><strong>Status:</strong> <span id="status">Starting...</span></p>
+        <p><strong>Progress:</strong> <span id="progress">0%</span></p>
+        <div id="details"></div>
+    </div>
+    <h2>Final Article:</h2>
+    <pre id="final-article"></pre>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const jobId = urlParams.get('job_id');
+        const topic = urlParams.get('topic');
+        document.getElementById('topic').textContent = decodeURIComponent(topic);
+
+        const eventSource = new EventSource(`/progress/${jobId}`);
+
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.heartbeat) {
+                console.log("Heartbeat received");
+                return;
+            }
+
+            if (data.error) {
+                document.getElementById('status').textContent = `Error: ${data.error}`;
+                eventSource.close();
+                return;
+            }
+
+            document.getElementById('progress').textContent = `${data.progress}%`;
+
+            const details = document.getElementById('details');
+            switch(data.step) {
+                case 'connected':
+                    document.getElementById('status').textContent = 'Connected to progress stream...';
+                    break;
+                case 'outline':
+                    document.getElementById('status').textContent = 'Generating outline...';
+                    details.innerHTML = `<h3>Outline:</h3><ul>${data.data.sections.map(s => `<li>${s}</li>`).join('')}</ul>`;
+                    break;
+                case 'content':
+                    document.getElementById('status').textContent = `Writing content (${data.data.completed_sections}/${data.data.total_sections})...`;
+                    break;
+                case 'complete':
+                    document.getElementById('status').textContent = 'Workflow complete!';
+                    document.getElementById('final-article').textContent = data.data.final_article;
+                    eventSource.close();
+                    break;
+            }
+        };
+
+        eventSource.onerror = function(err) {
+            document.getElementById('status').textContent = 'Connection error.';
+            eventSource.close();
+        };
+    </script>
+</body>
+</html>
