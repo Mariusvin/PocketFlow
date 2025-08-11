@@ -1,0 +1,96 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  background-color: #f0f2f5;
+}
+
+.App {
+  text-align: center;
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+
+main {
+  padding: 20px;
+}
+
+.input-section {
+  margin-bottom: 20px;
+}
+
+.input-section input {
+  padding: 10px;
+  width: 300px;
+  margin-right: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.input-section button {
+  padding: 10px 20px;
+  border: none;
+  background-color: #282c34;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.results-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.domain-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 500px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  background-color: white;
+}
+
+.domain-name {
+  font-weight: bold;
+}
+
+.status.available {
+  color: green;
+}
+
+.status.unavailable {
+  color: red;
+}
+
+.price {
+  font-weight: bold;
+}
+
+.error {
+  color: red;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 600px) {
+  .input-section input {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+
+  .domain-result {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .domain-result span {
+    margin-bottom: 5px;
+  }
+}
