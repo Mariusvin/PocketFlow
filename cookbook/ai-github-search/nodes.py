@@ -44,17 +44,22 @@ class SearchGitHub(Node):
 
     Inputs in shared:
       - gh_queries: List[str]
+      - filters: Dict (optional) with language, min_stars, max_stars, updated_after, license
 
     Writes:
       - shared["results_raw"]: List[Dict]
     """
 
     def prep(self, shared: Dict[str, Any]):
-        return shared.get("gh_queries", [])
+        queries = shared.get("gh_queries", [])
+        filters = shared.get("filters", {})
+        return queries, filters
 
-    def exec(self, queries: List[str]) -> List[Dict[str, Any]]:
+    def exec(self, inputs: Tuple[List[str], Dict[str, Any]]) -> List[Dict[str, Any]]:
+        queries, filters = inputs
         if not queries:
             return []
+        
         token = os.getenv("GITHUB_TOKEN", "")
         headers = {
             "Accept": "application/vnd.github+json",
@@ -64,14 +69,62 @@ class SearchGitHub(Node):
             headers["Authorization"] = f"Bearer {token}"
 
         results: List[Dict[str, Any]] = []
-        # Use repo search first; fallback to code search could be added later
+        
+        # Build base search parameters
+        base_params = {
+            "sort": "stars",
+            "order": "desc",
+            "per_page": 30,  # Increased for better filtering
+        }
+        
+        # Apply filters
+        if filters.get("language"):
+            base_params["language"] = filters["language"]
+        
+        if filters.get("min_stars"):
+            base_params["stars"] = f">={filters['min_stars']}"
+        
+        if filters.get("max_stars"):
+            if "stars" in base_params:
+                base_params["stars"] = f"{filters['min_stars']}..{filters['max_stars']}"
+            else:
+                base_params["stars"] = f"<={filters['max_stars']}"
+        
+        if filters.get("updated_after"):
+            base_params["pushed"] = f">{filters['updated_after']}"
+        
+        if filters.get("license"):
+            base_params["license"] = filters["license"]
+
         with httpx.Client(timeout=20) as client:
             for q in queries:
-                params = {"q": q, "sort": "stars", "order": "desc", "per_page": 10}
+                # Combine user query with filters
+                search_query = q
+                if filters.get("language"):
+                    search_query += f" language:{filters['language']}"
+                if filters.get("min_stars"):
+                    search_query += f" stars:>={filters['min_stars']}"
+                if filters.get("max_stars"):
+                    search_query += f" stars:<={filters['max_stars']}"
+                if filters.get("updated_after"):
+                    search_query += f" pushed:>{filters['updated_after']}"
+                if filters.get("license"):
+                    search_query += f" license:{filters['license']}"
+                
+                params = {**base_params, "q": search_query}
                 r = client.get("https://api.github.com/search/repositories", params=params, headers=headers)
+                
                 if r.status_code == 200:
                     items = r.json().get("items", [])
                     results.extend(items)
+                elif r.status_code == 422:  # Validation error, try without problematic filters
+                    # Fallback to basic search
+                    params = {**base_params, "q": q}
+                    r = client.get("https://api.github.com/search/repositories", params=params, headers=headers)
+                    if r.status_code == 200:
+                        items = r.json().get("items", [])
+                        results.extend(items)
+
         # Deduplicate by full_name
         seen = set()
         unique = []
@@ -80,9 +133,10 @@ class SearchGitHub(Node):
             if key and key not in seen:
                 seen.add(key)
                 unique.append(it)
+        
         return unique
 
-    def post(self, shared: Dict[str, Any], prep_res: List[str], exec_res: List[Dict[str, Any]]):
+    def post(self, shared: Dict[str, Any], prep_res: Tuple[List[str], Dict[str, Any]], exec_res: List[Dict[str, Any]]):
         shared["results_raw"] = exec_res
 
 
@@ -95,16 +149,22 @@ class RankAndFormat(Node):
     def exec(self, items: List[Dict[str, Any]]):
         if not items:
             return []
+        
         # Create a compact text for LLM ranking, but also support no-key mode
         rows = []
-        for it in items[:30]:
+        for it in items[:50]:  # Increased limit for better ranking
             rows.append(
                 {
                     "name": it.get("full_name", ""),
                     "description": it.get("description", "") or "",
                     "stars": it.get("stargazers_count", 0),
+                    "forks": it.get("forks_count", 0),
                     "url": it.get("html_url", ""),
                     "language": it.get("language", ""),
+                    "license": it.get("license", {}).get("name", "") if it.get("license") else "",
+                    "updated_at": it.get("updated_at", ""),
+                    "open_issues": it.get("open_issues_count", 0),
+                    "size": it.get("size", 0),
                 }
             )
 
@@ -112,12 +172,16 @@ class RankAndFormat(Node):
             os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
         )
         if api_key_missing:
-            # simple sort by stars
-            rows.sort(key=lambda x: x.get("stars", 0), reverse=True)
-            return rows[:20]
+            # Enhanced sorting by multiple factors
+            rows.sort(key=lambda x: (
+                x.get("stars", 0) * 2 +  # Stars are most important
+                x.get("forks", 0) +      # Forks add value
+                (1 if x.get("language") else 0)  # Prefer repos with language specified
+            ), reverse=True)
+            return rows[:25]
 
         # Ask LLM to rank primarily by match and stars
-        prompt = "Rank these repositories for the given search intent, return top 20 as JSON list with fields name,url,description,language,stars.\n" \
+        prompt = "Rank these repositories for the given search intent, return top 25 as JSON list with fields name,url,description,language,stars,forks,license,updated_at,open_issues,size.\n" \
                  "The intent: "
         prompt += "<intent/>\n"
         prompt += "Repo candidates (JSON lines):\n"
@@ -159,11 +223,17 @@ class RankAndFormat(Node):
             try:
                 data = json.loads(cand)
                 if isinstance(data, list):
-                    return data[:20]
+                    return data[:25]
             except Exception:
                 continue
-        rows.sort(key=lambda x: x.get("stars", 0), reverse=True)
-        return rows[:20]
+        
+        # Fallback to enhanced sorting
+        rows.sort(key=lambda x: (
+            x.get("stars", 0) * 2 +
+            x.get("forks", 0) +
+            (1 if x.get("language") else 0)
+        ), reverse=True)
+        return rows[:25]
 
     def post(self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res: List[Dict[str, Any]]):
         shared["results"] = exec_res

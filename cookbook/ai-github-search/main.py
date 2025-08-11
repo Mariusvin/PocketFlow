@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -32,12 +32,38 @@ def index():
 
 
 @app.get("/api/search")
-def api_search(q: str = Query("", min_length=1)):
+def api_search(
+    q: str = Query("", min_length=1),
+    language: Optional[str] = Query(None, description="Programming language filter"),
+    min_stars: Optional[int] = Query(None, ge=0, description="Minimum stars"),
+    max_stars: Optional[int] = Query(None, ge=0, description="Maximum stars"),
+    updated_after: Optional[str] = Query(None, description="Updated after date (YYYY-MM-DD)"),
+    license: Optional[str] = Query(None, description="License type"),
+):
     shared: Dict[str, Any] = {"nl_query": q}
+    
+    # Build filters dict
+    filters = {}
+    if language:
+        filters["language"] = language
+    if min_stars is not None:
+        filters["min_stars"] = min_stars
+    if max_stars is not None:
+        filters["max_stars"] = max_stars
+    if updated_after:
+        filters["updated_after"] = updated_after
+    if license:
+        filters["license"] = license
+    
+    if filters:
+        shared["filters"] = filters
+    
     flow: Flow = create_search_flow()
     flow.run(shared)
+    
     return JSONResponse({
         "query": q,
+        "filters": filters,
         "results": shared.get("results", []),
         "gh_queries": shared.get("gh_queries", []),
     })

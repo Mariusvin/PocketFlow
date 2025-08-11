@@ -5,33 +5,163 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI GitHub Search</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              'sans': ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   </head>
-  <body class="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-800">
-    <main class="max-w-5xl mx-auto p-4 md:p-8">
-      <div class="flex flex-col items-center mt-16">
-        <img src="https://github.githubassets.com/images/modules/logos_page/Octocat.png" alt="octocat" class="w-24 h-24 opacity-80" />
-        <h1 class="text-4xl md:text-5xl font-extrabold mt-6 tracking-tight text-slate-800">AI GitHub Search</h1>
-        <p class="mt-3 text-slate-600">Search GitHub repositories with natural language.</p>
-
-        <div class="mt-10 w-full md:w-3/4">
-          <div class="flex rounded-xl shadow-sm overflow-hidden bg-white ring-1 ring-slate-200">
-            <input id="q" type="text" placeholder="A simple Next.js todo app that uses Tailwind CSS" class="flex-1 px-4 py-3 outline-none" />
-            <button id="btn" class="px-5 bg-slate-800 text-white hover:bg-slate-700">Search</button>
-          </div>
-          <p id="queries" class="text-xs text-slate-500 mt-2"></p>
-          <p id="status" class="text-xs mt-1"></p>
+  <body class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 font-sans">
+    <main class="max-w-7xl mx-auto px-6 py-8">
+      <!-- Header Section -->
+      <div class="text-center mb-12">
+        <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-lg mb-6">
+          <img src="https://github.githubassets.com/images/modules/logos_page/Octocat.png" alt="octocat" class="w-12 h-12 opacity-90" />
         </div>
-
-        <div id="results" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8 w-full"></div>
-
-        <footer class="mt-16 text-xs text-slate-500">
-          Built with PocketFlow + FastAPI
-        </footer>
+        <h1 class="text-5xl md:text-6xl font-bold bg-gradient-to-r from-slate-800 via-blue-800 to-indigo-800 bg-clip-text text-transparent mb-4">
+          AI GitHub Search
+        </h1>
+        <p class="text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
+          Search GitHub repositories with natural language. Find the perfect code for your next project.
+        </p>
       </div>
+
+      <!-- Search Section -->
+      <div class="max-w-4xl mx-auto mb-8">
+        <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
+          <!-- Search Bar -->
+          <div class="flex rounded-xl shadow-lg overflow-hidden bg-white ring-1 ring-slate-200/50 mb-6">
+            <input 
+              id="q" 
+              type="text" 
+              placeholder="Describe what you're looking for... (e.g., 'A simple Next.js todo app that uses Tailwind CSS')" 
+              class="flex-1 px-6 py-4 text-lg outline-none placeholder:text-slate-400" 
+            />
+            <button id="btn" class="px-8 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold text-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg">
+              Search
+            </button>
+          </div>
+          
+          <!-- Advanced Filters -->
+          <div id="filters" class="bg-white/60 backdrop-blur-sm rounded-xl border border-slate-200/50 p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-slate-700 flex items-center">
+                <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z"></path>
+                </svg>
+                Advanced Filters
+              </h3>
+              <button id="toggleFilters" class="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">
+                Show Filters
+              </button>
+            </div>
+            
+            <div id="filterControls" class="hidden space-y-6">
+              <!-- First Row: Language, Min Stars, Max Stars -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label class="block text-sm font-semibold text-slate-700 mb-2">Programming Language</label>
+                  <select id="language" class="w-full px-4 py-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm">
+                    <option value="">Any Language</option>
+                    <option value="JavaScript">JavaScript</option>
+                    <option value="Python">Python</option>
+                    <option value="TypeScript">TypeScript</option>
+                    <option value="Java">Java</option>
+                    <option value="Go">Go</option>
+                    <option value="Rust">Rust</option>
+                    <option value="C++">C++</option>
+                    <option value="C#">C#</option>
+                    <option value="PHP">PHP</option>
+                    <option value="Ruby">Ruby</option>
+                    <option value="Swift">Swift</option>
+                    <option value="Kotlin">Kotlin</option>
+                    <option value="Scala">Scala</option>
+                    <option value="Dart">Dart</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-semibold text-slate-700 mb-2">Minimum Stars</label>
+                  <input id="minStars" type="number" min="0" placeholder="0" class="w-full px-4 py-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm" />
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-semibold text-slate-700 mb-2">Maximum Stars</label>
+                  <input id="maxStars" type="number" min="0" placeholder="∞" class="w-full px-4 py-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm" />
+                </div>
+              </div>
+              
+              <!-- Second Row: Updated After, License -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label class="block text-sm font-semibold text-slate-700 mb-2">Updated After</label>
+                  <input id="updatedAfter" type="date" class="w-full px-4 py-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm" />
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-semibold text-slate-700 mb-2">License Type</label>
+                  <select id="license" class="w-full px-4 py-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm">
+                    <option value="">Any License</option>
+                    <option value="MIT">MIT</option>
+                    <option value="Apache-2.0">Apache 2.0</option>
+                    <option value="GPL-3.0">GPL 3.0</option>
+                    <option value="BSD-3-Clause">BSD 3-Clause</option>
+                    <option value="ISC">ISC</option>
+                    <option value="Unlicense">Unlicense</option>
+                    <option value="AGPL-3.0">AGPL 3.0</option>
+                    <option value="LGPL-3.0">LGPL 3.0</option>
+                  </select>
+                </div>
+              </div>
+              
+              <!-- Filter Actions -->
+              <div class="flex items-center justify-between pt-4 border-t border-slate-200/50">
+                <button id="clearFilters" class="text-sm text-slate-500 hover:text-slate-700 font-medium transition-colors flex items-center">
+                  <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                  </svg>
+                  Clear All Filters
+                </button>
+                <button id="applyFilters" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg">
+                  Apply Filters
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Status Messages -->
+          <div class="space-y-2">
+            <p id="queries" class="text-sm text-slate-600 bg-slate-100/50 rounded-lg px-4 py-2"></p>
+            <p id="status" class="text-sm rounded-lg px-4 py-2"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <div id="results" class="max-w-7xl mx-auto">
+        <!-- Results will be populated here -->
+      </div>
+
+      <!-- Footer -->
+      <footer class="text-center mt-16 text-sm text-slate-500">
+        <div class="inline-flex items-center space-x-2 bg-white/60 backdrop-blur-sm rounded-full px-6 py-3 border border-white/20">
+          <span>Built with</span>
+          <span class="font-semibold text-blue-600">PocketFlow</span>
+          <span>+</span>
+          <span class="font-semibold text-indigo-600">FastAPI</span>
+        </div>
+      </footer>
     </main>
 
     <script type="module" src="/static/app.js"></script>
   </body>
-  </html>
+</html>
 
 
