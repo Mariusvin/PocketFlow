@@ -1,6 +1,9 @@
 import yaml
 from pocketflow import Node, BatchNode
-from utils import call_llm
+from utils.llm import call_llm
+from utils.code_executor import execute_code
+
+# --- Article Generation Workflow Nodes ---
 
 class GenerateOutline(Node):
     def prep(self, shared):
@@ -106,4 +109,89 @@ Make it:
         progress_msg = {"step": "complete", "progress": 100, "data": {"final_article": exec_res}}
         shared["sse_queue"].put_nowait(progress_msg)
 
+        return "default"
+
+# --- Code Generation Workflow Nodes ---
+
+class GenerateTests(Node):
+    def prep(self, shared):
+        return shared["problem_description"]
+
+    def exec(self, problem_description):
+        prompt = f"""
+Based on the following problem description, write a suite of unit tests in Python using the `unittest` framework.
+The tests should cover the main functionality, edge cases, and potential error conditions.
+The code should be a single block that can be executed.
+
+Problem:
+{problem_description}
+
+```python
+import unittest
+
+# Your test class and methods here
+
+```"""
+        response = call_llm(prompt)
+        # Simple extraction of the code block
+        try:
+            code = response.split("```python")[1].split("```")[0].strip()
+        except IndexError:
+            code = response # Assume the whole response is code if parsing fails
+        return code
+
+    def post(self, shared, prep_res, exec_res):
+        shared["generated_tests"] = exec_res
+        progress_msg = {"step": "tests_generated", "progress": 33, "data": {"tests": exec_res}}
+        shared["sse_queue"].put_nowait(progress_msg)
+        return "default"
+
+class ImplementSolution(Node):
+    def prep(self, shared):
+        return shared["problem_description"], shared["generated_tests"]
+
+    def exec(self, inputs):
+        problem_description, generated_tests = inputs
+        prompt = f"""
+Based on the following problem description and unit tests, write the Python code for the solution.
+The solution should be a single function or class that passes the provided tests.
+
+Problem:
+{problem_description}
+
+Tests:
+{generated_tests}
+
+```python
+# Your solution code here
+
+```"""
+        response = call_llm(prompt)
+        try:
+            code = response.split("```python")[1].split("```")[0].strip()
+        except IndexError:
+            code = response
+        return code
+
+    def post(self, shared, prep_res, exec_res):
+        shared["generated_solution"] = exec_res
+        progress_msg = {"step": "solution_implemented", "progress": 66, "data": {"solution": exec_res}}
+        shared["sse_queue"].put_nowait(progress_msg)
+        return "default"
+
+class RunAndValidate(Node):
+    def prep(self, shared):
+        return shared["generated_solution"], shared["generated_tests"]
+
+    def exec(self, inputs):
+        solution_code, test_code = inputs
+        # Combine the solution and test code into a single script for execution
+        full_code = f"{solution_code}\n\n{test_code}"
+        success, output = execute_code(full_code)
+        return {"success": success, "output": output}
+
+    def post(self, shared, prep_res, exec_res):
+        shared["validation_result"] = exec_res
+        progress_msg = {"step": "complete", "progress": 100, "data": exec_res}
+        shared["sse_queue"].put_nowait(progress_msg)
         return "default"

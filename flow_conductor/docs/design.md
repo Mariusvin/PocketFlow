@@ -2,58 +2,39 @@
 
 > Please DON'T remove notes for AI
 
-## Requirements
+This document outlines the design for the Flow Conductor application, which is composed of multiple workflows.
 
-> Notes for AI: Keep it simple and clear.
-> If the requirements are abstract, write concrete user stories
+---
+
+## Workflow 1: Article Generation
+
+### Requirements
 
 The Flow Conductor is a backend system for an AI orchestration platform. The initial implementation focuses on a specific use case: automated article generation.
 
 **User Story:** As a user, I want to provide a topic to the Flow Conductor system, and in return, the system should automatically generate a well-structured and styled article on that topic. I want to be able to track the progress of the generation in real-time through a web interface.
 
-## Flow Design
+### Flow Design
 
-> Notes for AI:
-> 1. Consider the design patterns of agent, map-reduce, rag, and workflow. Apply them if they fit.
-> 2. Present a concise, high-level description of the workflow.
+**Applicable Design Pattern:** The system uses the **Workflow** design pattern. The task of writing an article is decomposed into a sequence of distinct steps: outlining, content writing, and styling. This creates a clear and manageable pipeline.
 
-### Applicable Design Pattern:
-
-The system uses the **Workflow** design pattern. The task of writing an article is decomposed into a sequence of distinct steps: outlining, content writing, and styling. This creates a clear and manageable pipeline.
-
-### Flow high-level Design:
-
-The workflow consists of three main nodes executed in sequence:
-
+**Flow high-level Design:** The workflow consists of three main nodes executed in sequence:
 1.  **Generate Outline**: Takes a topic from the user and generates a structured outline for the article.
 2.  **Write Content**: For each section in the outline, this node writes a paragraph of content. This is a batch operation, processing each section independently.
 3.  **Apply Style**: Takes the combined draft from the previous step and rewrites it to improve its style and engagement.
 
 ```mermaid
 flowchart TD
-    GenerateOutline --> WriteContent
-    WriteContent --> ApplyStyle
+    subgraph ArticleGeneration
+        direction LR
+        GenerateOutline --> WriteContent
+        WriteContent --> ApplyStyle
+    end
 ```
 
-## Utility Functions
+### Node Design
 
-> Notes for AI:
-> 1. Understand the utility function definition thoroughly by reviewing the doc.
-> 2. Include only the necessary utility functions, based on nodes in the flow.
-
-1. **Call LLM** (`utils/call_llm.py`)
-    - *Input*: `prompt` (str)
-    - *Output*: `response` (str)
-    - *Necessity*: This is the core utility function used by all nodes to interact with the Large Language Model. For the initial implementation, this is a dummy function that returns predefined text based on the prompt.
-
-## Node Design
-
-### Shared Store
-
-> Notes for AI: Try to minimize data redundancy
-
-The shared store is an in-memory dictionary used for communication between nodes.
-
+**Shared Store:** The shared store for this workflow is an in-memory dictionary.
 ```python
 shared = {
     "topic": str,           # Input topic from the user
@@ -64,30 +45,102 @@ shared = {
 }
 ```
 
-### Node Steps
-
-> Notes for AI: Carefully decide whether to use Batch/Async Node/Flow.
-
+**Node Steps:**
 1. **GenerateOutline**
     - *Purpose*: To create a structured outline for the article from a given topic.
     - *Type*: Regular `Node`.
     - *Steps*:
       - *prep*: Reads the `topic` from the shared store.
-      - *exec*: Calls the `call_llm` utility with a prompt to generate a YAML-formatted list of sections. It then parses the YAML to extract the list.
-      - *post*: Writes the list of `sections` to the shared store and sends a progress update to the frontend via the `sse_queue`.
+      - *exec*: Calls the `call_llm` utility to generate a YAML-formatted list of sections.
+      - *post*: Writes the `sections` to the shared store and sends a progress update.
 
 2. **WriteContent**
-    - *Purpose*: To generate a paragraph of content for each section of the article outline.
-    - *Type*: `BatchNode`, as it processes a list of sections.
+    - *Purpose*: To generate content for each section of the outline.
+    - *Type*: `BatchNode`.
     - *Steps*:
-      - *prep*: Reads the `sections` list from the shared store and returns it as an iterable for batch processing.
-      - *exec*: For each `section` in the list, it calls the `call_llm` utility to write a paragraph. It also sends a progress update for each section processed via the `sse_queue`.
-      - *post*: Combines the generated paragraphs into a single `draft` string and writes it to the shared store.
+      - *prep*: Reads the `sections` list from the shared store.
+      - *exec*: For each `section`, calls `call_llm` to write a paragraph and sends a progress update.
+      - *post*: Combines the paragraphs into a `draft` and writes it to the shared store.
 
 3. **ApplyStyle**
-    - *Purpose*: To rewrite the drafted article to improve its tone and style.
+    - *Purpose*: To rewrite the draft article to improve its style.
     - *Type*: Regular `Node`.
     - *Steps*:
       - *prep*: Reads the `draft` from the shared store.
-      - *exec*: Calls the `call_llm` utility with a prompt to rewrite the draft in a more conversational and engaging style.
-      - *post*: Writes the rewritten content as the `final_article` in the shared store and sends a "complete" message to the frontend via the `sse_queue`.
+      - *exec*: Calls `call_llm` to rewrite the draft.
+      - *post*: Writes the `final_article` to the shared store and sends a completion message.
+
+---
+
+## Workflow 2: Code Generation
+
+### Requirements
+
+This workflow extends the Flow Conductor to support automated code generation, moving towards the larger vision of automating the software development lifecycle.
+
+**User Story:** As a developer, I want to provide a high-level problem description to the Flow Conductor, so that it can generate a Python function that solves the problem, along with a set of unit tests to verify the solution.
+
+### Flow Design
+
+**Applicable Design Pattern:** The system uses the **Workflow** design pattern, following a Test-Driven Development (TDD) approach.
+
+**Flow high-level Design:**
+1.  **Generate Tests**: Takes a problem description and generates unit tests that a correct solution should pass.
+2.  **Implement Solution**: Takes the problem description and tests, and writes a Python function that solves the problem.
+3.  **Run and Validate**: Executes the generated tests against the generated solution to verify correctness.
+
+```mermaid
+flowchart TD
+    subgraph CodeGeneration
+        direction LR
+        GenerateTests --> ImplementSolution
+        ImplementSolution --> RunAndValidate
+    end
+```
+
+### Node Design
+
+**Shared Store (additions):**
+```python
+"problem_description": str, # Input from the user
+"generated_tests": str,     # Python code for the unit tests
+"generated_solution": str,  # Python code for the solution function
+"validation_result": dict   # Result from the RunAndValidate node
+```
+
+**Node Steps:**
+1. **GenerateTests**
+    - *Purpose*: To generate unit tests based on a problem description.
+    - *Type*: Regular `Node`.
+    - *Steps*:
+      - *prep*: Reads `problem_description` from the shared store.
+      - *exec*: Calls `call_llm` to generate Python code for unit tests.
+      - *post*: Writes the `generated_tests` to the shared store and sends a progress update.
+
+2. **ImplementSolution**
+    - *Purpose*: To write a Python function that solves the problem and passes the generated tests.
+    - *Type*: Regular `Node`.
+    - *Steps*:
+      - *prep*: Reads `problem_description` and `generated_tests` from the shared store.
+      - *exec*: Calls `call_llm` to generate the solution function.
+      - *post*: Writes the `generated_solution` to the shared store and sends a progress update.
+
+3. **RunAndValidate**
+    - *Purpose*: To execute the generated tests against the generated solution.
+    - *Type*: Regular `Node`.
+    - *Steps*:
+      - *prep*: Reads `generated_solution` and `generated_tests` from the shared store.
+      - *exec*: Combines the solution and test code and uses the `execute_code` utility to run it.
+      - *post*: Writes the `validation_result` to the shared store and sends a completion message.
+
+## Common Utility Functions
+
+1. **Call LLM** (`utils/call_llm.py`)
+    - *Input*: `prompt` (str)
+    - *Output*: `response` (str)
+    - *Necessity*: Used by all nodes for LLM interaction.
+
+2. **Execute Code** (`utils/code_executor.py`)
+    - *Input*: `code_string` (str)
+    - *Output*: A tuple of `(success: bool, output: str)`.
+    - *Necessity*: Required by the `RunAndValidate` node to execute generated code.

@@ -1,8 +1,11 @@
+import time
+
 def call_llm(prompt: str) -> str:
     """
     A dummy function to simulate a call to a large language model.
     """
     print(f"--- LLM PROMPT ---\n{prompt}\n--------------------")
+    time.sleep(2) # Simulate network latency and processing time
     if "outline" in prompt:
         return """
 ```yaml

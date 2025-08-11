@@ -1,100 +1,111 @@
 import asyncio
 import json
-import uuid
-from fastapi import FastAPI, BackgroundTasks, Form
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, BackgroundTasks, Form, Request
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from flow import create_flow
 
-app = FastAPI()
+from flow import create_article_generation_flow, create_code_generation_flow
+from job_store import JobStore, JobStatus
+
+from contextlib import asynccontextmanager
+
+# Global instance of the JobStore
+job_store = JobStore()
+
+async def cleanup_task():
+    while True:
+        await asyncio.sleep(60) # Run every 60 seconds
+        job_store.cleanup_old_jobs()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the background cleanup task
+    task = asyncio.create_task(cleanup_task())
+    yield
+    # Clean up the task when the application shuts down
+    task.cancel()
+
+app = FastAPI(lifespan=lifespan)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Store active jobs and their SSE queues
-active_jobs = {}
-
-def run_workflow(job_id: str, topic: str):
-    """Run the workflow in background"""
+def run_workflow(job_id: str, workflow_type: str, user_input: str):
+    """Run the selected workflow in the background"""
     try:
-        # Get the pre-created queue from active_jobs
-        sse_queue = active_jobs[job_id]
-        shared = {
-            "topic": topic,
-            "sse_queue": sse_queue,
-            "sections": [],
-            "draft": "",
-            "final_article": ""
-        }
+        job_store.update_job_status(job_id, JobStatus.RUNNING)
+        job = job_store.get_job(job_id)
 
-        # Run the workflow
-        flow = create_flow()
+        if workflow_type == "article_generation":
+            shared = {"topic": user_input, "sse_queue": job.sse_queue}
+            flow = create_article_generation_flow()
+        elif workflow_type == "code_generation":
+            shared = {"problem_description": user_input, "sse_queue": job.sse_queue}
+            flow = create_code_generation_flow()
+        else:
+            raise ValueError(f"Unknown workflow type: {workflow_type}")
+
+        # The result of the flow run is the final shared state
         flow.run(shared)
 
+        # The last message on the queue is the final result from the last node
+        final_data = shared.get("validation_result", shared.get("final_article", {}))
+        job_store.set_job_result(job_id, result={"final_data": final_data}, success=True)
+
     except Exception as e:
-        # Send error message
-        error_msg = {"step": "error", "progress": 0, "data": {"error": str(e)}}
-        if job_id in active_jobs:
-            active_jobs[job_id].put_nowait(error_msg)
+        # Ensure the job status is marked as FAILED
+        error_result = {"error": str(e), "details": "The workflow failed unexpectedly."}
+        job_store.set_job_result(job_id, result=error_result, success=False)
+
 
 @app.post("/start-job")
-async def start_job(background_tasks: BackgroundTasks, topic: str = Form(...)):
-    """Start a new article generation job"""
-    job_id = str(uuid.uuid4())
-
-    # Create SSE queue and register job immediately
-    sse_queue = asyncio.Queue()
-    active_jobs[job_id] = sse_queue
-
-    # Start background task
-    background_tasks.add_task(run_workflow, job_id, topic)
-
-    return {"job_id": job_id, "topic": topic, "status": "started"}
+async def start_job(
+    background_tasks: BackgroundTasks,
+    workflow_type: str = Form(...),
+    user_input: str = Form(...)
+):
+    """Start a new job for a selected workflow"""
+    job = job_store.create_job()
+    background_tasks.add_task(run_workflow, job.job_id, workflow_type, user_input)
+    return JSONResponse(content={"job_id": job.job_id, "status": "started"})
 
 @app.get("/progress/{job_id}")
-async def get_progress(job_id: str):
+async def get_progress(request: Request, job_id: str):
     """Stream progress updates via SSE"""
 
     async def event_stream():
-        if job_id not in active_jobs:
+        job = job_store.get_job(job_id)
+        if not job:
             yield f"data: {json.dumps({'error': 'Job not found'})}\n\n"
             return
 
-        sse_queue = active_jobs[job_id]
+        # First, send a connection confirmation message
+        yield f"data: {json.dumps({'step': 'connected', 'progress': 0, 'data': {'message': f'Connected to job {job_id}'}})}\n\n"
 
-        # Send initial connection confirmation
-        yield f"data: {json.dumps({'step': 'connected', 'progress': 0, 'data': {'message': 'Connected to job progress'}})}\n\n"
+        while True:
+            # Check if the client has disconnected
+            if await request.is_disconnected():
+                break
 
-        try:
-            while True:
-                # Wait for next progress update
-                try:
-                    # Use asyncio.wait_for to avoid blocking forever
-                    progress_msg = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
-                    yield f"data: {json.dumps(progress_msg)}\n\n"
+            try:
+                # Wait for the next message on the queue
+                progress_msg = await asyncio.wait_for(job.sse_queue.get(), timeout=1.0)
+                yield f"data: {json.dumps(progress_msg)}\n\n"
 
-                    # If job is complete, clean up and exit
-                    if progress_msg.get("step") == "complete":
-                        del active_jobs[job_id]
-                        break
+                # If the final message is sent, we can stop
+                if progress_msg.get("step") == "complete":
+                    break
+            except asyncio.TimeoutError:
+                # If there's a timeout, it means no new messages.
+                # We can send a heartbeat or check the job status.
+                # If the job is done, we break the loop.
+                job = job_store.get_job(job_id) # Re-fetch job to get latest status
+                if not job or job.status in [JobStatus.COMPLETED, JobStatus.FAILED]:
+                    break
+                else:
+                     yield f"data: {json.dumps({'heartbeat': True})}\n\n"
 
-                except asyncio.TimeoutError:
-                    # Send heartbeat to keep connection alive
-                    yield f"data: {json.dumps({'heartbeat': True})}\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/plain",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Content-Type": "text/event-stream"
-        }
-    )
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/")
 async def get_index():

@@ -6,34 +6,74 @@
     <title>Flow Conductor</title>
     <style>
         body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { text-align: center; }
-        input { padding: 10px; width: 300px; }
+        .container { text-align: center; max-width: 500px; padding: 20px; }
+        select, textarea { padding: 10px; width: 100%; margin-bottom: 10px; }
+        textarea { height: 150px; }
         button { padding: 10px 20px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Flow Conductor</h1>
-        <p>Enter a topic to generate an article:</p>
         <form id="start-form">
-            <input type="text" id="topic" name="topic" placeholder="e.g., 'The Future of AI'" required>
+            <label for="workflow-type">Choose a workflow:</label>
+            <select id="workflow-type" name="workflow_type">
+                <option value="article_generation">Article Generation</option>
+                <option value="code_generation">Code Generation</option>
+            </select>
+            <br><br>
+            <label for="user-input" id="input-label">Enter a topic:</label>
+            <textarea id="user-input" name="user_input" required></textarea>
             <br><br>
             <button type="submit">Start Workflow</button>
         </form>
     </div>
     <script>
+        const workflowSelect = document.getElementById('workflow-type');
+        const inputLabel = document.getElementById('input-label');
+        const userInput = document.getElementById('user-input');
+
+        const placeholders = {
+            'article_generation': "e.g., 'The Future of AI'",
+            'code_generation': "e.g., 'Write a Python function to find the nth Fibonacci number.'"
+        };
+
+        function updateForm() {
+            const selectedWorkflow = workflowSelect.value;
+            if (selectedWorkflow === 'article_generation') {
+                inputLabel.textContent = 'Enter a topic:';
+            } else {
+                inputLabel.textContent = 'Enter a problem description:';
+            }
+            userInput.placeholder = placeholders[selectedWorkflow];
+        }
+
+        workflowSelect.addEventListener('change', updateForm);
+        // Initial call to set the correct placeholder
+        updateForm();
+
         document.getElementById('start-form').addEventListener('submit', async function(event) {
             event.preventDefault();
-            const topic = document.getElementById('topic').value;
+            const workflowType = workflowSelect.value;
+            const inputValue = userInput.value;
+
             const formData = new FormData();
-            formData.append('topic', topic);
+            formData.append('workflow_type', workflowType);
+            formData.append('user_input', inputValue);
 
             const response = await fetch('/start-job', {
                 method: 'POST',
                 body: formData
             });
-            const data = await response.json();
-            window.location.href = `/progress.html?job_id=${data.job_id}&topic=${encodeURIComponent(topic)}`;
+
+            if (response.ok) {
+                const data = await response.json();
+                // We'll use the user_input as the topic for display on the progress page
+                window.location.href = `/progress.html?job_id=${data.job_id}&topic=${encodeURIComponent(inputValue)}`;
+            } else {
+                alert('Failed to start job. Please check the console for more details.');
+                console.error(await response.text());
+            }
         });
     </script>
 </body>
