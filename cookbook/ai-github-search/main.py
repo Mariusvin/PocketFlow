@@ -66,6 +66,7 @@ def api_search(
         "filters": filters,
         "results": shared.get("results", []),
         "gh_queries": shared.get("gh_queries", []),
+        "search_strategies": shared.get("search_strategies", []),
     })
 
 

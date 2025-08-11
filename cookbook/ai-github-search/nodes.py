@@ -6,37 +6,146 @@ from utils.call_llm import call_llm
 
 
 class BuildSearchQuery(Node):
-    """Turns a natural language prompt into a set of GitHub code/search queries.
+    """Turns a natural language prompt into multiple intelligent GitHub search strategies.
 
     Shared inputs:
       - shared["nl_query"]: str
 
     Writes:
-      - shared["gh_queries"]: List[str]
+      - shared["gh_queries"]: List[str] - Multiple search strategies
+      - shared["search_strategies"]: List[Dict] - Detailed search approaches
     """
 
     def prep(self, shared: Dict[str, Any]):
         return shared.get("nl_query", "")
 
-    def exec(self, nl_query: str) -> List[str]:
+    def exec(self, nl_query: str) -> Tuple[List[str], List[Dict[str, Any]]]:
         if not nl_query:
-            return []
+            return [], []
+        
+        # Enhanced AI prompt for better query generation
         prompt = f"""
-Convert this user request into up to 3 precise GitHub search queries (for the code search bar).
-Keep them short and include key frameworks, languages, and minimal keywords.
-Return as one query per line, no numbering.
+You are an expert GitHub search strategist. The user wants to find: "{nl_query}"
 
-User request: {nl_query}
+Generate 5 different search strategies, each with a specific approach:
+
+1. **Direct Match**: Exact technical terms and frameworks
+2. **Alternative Terms**: Synonyms and related concepts  
+3. **Broader Scope**: More general but relevant terms
+4. **Specific Use Case**: Focus on practical applications
+5. **Trending Terms**: Popular, current terminology
+
+For each strategy, provide:
+- A concise search query (max 8 words)
+- The reasoning behind it
+- Expected repository types
+
+Return as JSON:
+{{
+  "strategies": [
+    {{
+      "type": "Direct Match",
+      "query": "search query here",
+      "reasoning": "why this approach",
+      "target": "what we expect to find"
+    }}
+  ]
+}}
+
+Make queries specific enough to find relevant repos but broad enough to get results.
+Focus on technical accuracy and search effectiveness.
 """
-        text = call_llm(prompt)
-        lines = [l.strip() for l in text.splitlines() if l.strip()]
-        # Heuristic fallback if model returns paragraph
-        if len(lines) == 1 and " " in lines[0] and len(lines[0]) > 120:
-            lines = [nl_query]
-        return lines[:3]
+        
+        try:
+            text = call_llm(prompt)
+            # Extract JSON from response
+            import json
+            import re
+            
+            # Try to find JSON in the response
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                if "strategies" in result and isinstance(result["strategies"], list):
+                    queries = [s["query"] for s in result["strategies"] if s.get("query")]
+                    strategies = result["strategies"]
+                    return queries, strategies
+            
+        except Exception:
+            pass
+        
+        # Fallback: intelligent query generation without LLM
+        fallback_queries = self._generate_fallback_queries(nl_query)
+        fallback_strategies = [
+            {"type": "Fallback", "query": q, "reasoning": "Intelligent fallback", "target": "General repositories"} 
+            for q in fallback_queries
+        ]
+        
+        return fallback_queries, fallback_strategies
 
-    def post(self, shared: Dict[str, Any], prep_res: str, exec_res: List[str]):
-        shared["gh_queries"] = exec_res
+    def _generate_fallback_queries(self, nl_query: str) -> List[str]:
+        """Generate intelligent fallback queries when LLM is not available."""
+        queries = []
+        
+        # Extract key technical terms
+        tech_terms = []
+        common_terms = {
+            "todo": ["todo", "task", "checklist", "reminder"],
+            "app": ["app", "application", "webapp", "web-app"],
+            "react": ["react", "reactjs", "react-js"],
+            "next": ["next", "nextjs", "next-js"],
+            "python": ["python", "py", "python3"],
+            "javascript": ["javascript", "js", "node", "nodejs"],
+            "typescript": ["typescript", "ts"],
+            "tailwind": ["tailwind", "tailwindcss", "tailwind-css"],
+            "machine learning": ["ml", "machine-learning", "ai", "artificial-intelligence"],
+            "trading": ["trading", "trading-bot", "bot", "automated"],
+            "profit": ["profit", "profitable", "revenue", "money"],
+            "quickstart": ["quickstart", "starter", "template", "boilerplate"],
+            "deployment": ["deploy", "deployment", "production", "hosting"],
+            "docker": ["docker", "container", "docker-compose"],
+            "aws": ["aws", "amazon", "lambda", "ec2"],
+            "api": ["api", "rest", "graphql", "endpoint"]
+        }
+        
+        query_lower = nl_query.lower()
+        for category, terms in common_terms.items():
+            if any(term in query_lower for term in terms):
+                tech_terms.extend(terms[:2])  # Take first 2 terms from each category
+        
+        # Generate different query strategies
+        if tech_terms:
+            # Strategy 1: Direct technical terms
+            queries.append(" ".join(tech_terms[:4]))
+            
+            # Strategy 2: Add "starter" or "template"
+            if any(term in query_lower for term in ["app", "project", "website"]):
+                queries.append(f"{' '.join(tech_terms[:3])} starter template")
+            
+            # Strategy 3: Focus on popularity
+            queries.append(f"{' '.join(tech_terms[:3])} popular")
+            
+            # Strategy 4: Add "example" or "demo"
+            queries.append(f"{' '.join(tech_terms[:3])} example demo")
+            
+            # Strategy 5: Broader search
+            queries.append(" ".join(tech_terms[:2]))
+        else:
+            # Generic strategies if no tech terms found
+            queries = [
+                nl_query,
+                f"{nl_query} code",
+                f"{nl_query} project",
+                f"{nl_query} example",
+                f"{nl_query} template"
+            ]
+        
+        return queries[:5]  # Return max 5 queries
+
+    def post(self, shared: Dict[str, Any], prep_res: str, exec_res: Tuple[List[str], List[Dict[str, Any]]]):
+        queries, strategies = exec_res
+        shared["gh_queries"] = queries
+        shared["search_strategies"] = strategies
 
 
 class SearchGitHub(Node):
