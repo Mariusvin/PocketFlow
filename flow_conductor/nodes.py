@@ -180,18 +180,93 @@ Tests:
         return "default"
 
 class RunAndValidate(Node):
+    MAX_RETRIES = 3
+
     def prep(self, shared):
+        # Initialize retry counter and error logs if they don't exist
+        if "retry_count" not in shared:
+            shared["retry_count"] = 0
+            shared["error_logs"] = []
         return shared["generated_solution"], shared["generated_tests"]
 
     def exec(self, inputs):
         solution_code, test_code = inputs
-        # Combine the solution and test code into a single script for execution
         full_code = f"{solution_code}\n\n{test_code}"
         success, output = execute_code(full_code)
         return {"success": success, "output": output}
 
     def post(self, shared, prep_res, exec_res):
         shared["validation_result"] = exec_res
-        progress_msg = {"step": "complete", "progress": 100, "data": exec_res}
+
+        if exec_res["success"]:
+            progress_msg = {"step": "complete", "progress": 100, "data": exec_res}
+            shared["sse_queue"].put_nowait(progress_msg)
+            return "success"
+        else:
+            shared["retry_count"] += 1
+            shared["error_logs"].append(exec_res["output"])
+
+            progress_msg = {
+                "step": "validation_failed",
+                "progress": 70 + shared['retry_count'] * 10, # Progress increases with each retry
+                "data": exec_res
+            }
+            shared["sse_queue"].put_nowait(progress_msg)
+
+            if shared["retry_count"] >= self.MAX_RETRIES:
+                return "max_retries_reached"
+            else:
+                return "failure"
+
+class ReviewAndCorrect(Node):
+    def prep(self, shared):
+        return (
+            shared["problem_description"],
+            shared["generated_solution"],
+            shared["generated_tests"],
+            shared.get("error_logs", [])
+        )
+
+    def exec(self, inputs):
+        problem, solution, tests, errors = inputs
+        error_str = "\n".join(errors)
+
+        prompt = f"""
+I have a Python solution that failed some unit tests. Please debug and provide a corrected version.
+
+Problem Description:
+{problem}
+
+Unit Tests:
+{tests}
+
+Current (failing) Solution:
+{solution}
+
+Errors from the last run:
+{error_str}
+
+Please provide the corrected Python code for the solution. Do not include the tests, just the corrected function or class.
+
+```python
+# Your corrected solution code here
+
+```"""
+        response = call_llm(prompt)
+        try:
+            code = response.split("```python")[1].split("```")[0].strip()
+        except IndexError:
+            code = response
+        return code
+
+    def post(self, shared, prep_res, exec_res):
+        # Overwrite the solution with the new, corrected version
+        shared["generated_solution"] = exec_res
+        progress_msg = {
+            "step": "solution_corrected",
+            "progress": 75, # Arbitrary progress update
+            "data": {"new_solution": exec_res}
+        }
         shared["sse_queue"].put_nowait(progress_msg)
-        return "default"
+        # Action to loop back to the validation node
+        return "validate"

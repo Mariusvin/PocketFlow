@@ -72,29 +72,34 @@ shared = {
 
 ---
 
-## Workflow 2: Code Generation
+## Workflow 2: Agentic Code Generation (Self-Correcting)
 
 ### Requirements
 
-This workflow extends the Flow Conductor to support automated code generation, moving towards the larger vision of automating the software development lifecycle.
+This workflow extends the Flow Conductor to support automated code generation. It uses an agentic, self-correcting loop to improve the reliability of the generated code.
 
-**User Story:** As a developer, I want to provide a high-level problem description to the Flow Conductor, so that it can generate a Python function that solves the problem, along with a set of unit tests to verify the solution.
+**User Story:** As a developer, I want to provide a high-level problem description to the Flow Conductor, and have it autonomously generate a Python function, test it, and debug it until the tests pass.
 
 ### Flow Design
 
-**Applicable Design Pattern:** The system uses the **Workflow** design pattern, following a Test-Driven Development (TDD) approach.
+**Applicable Design Pattern:** This workflow uses a combination of the **Workflow** and **Agent** design patterns. It follows a TDD-like sequence, but incorporates an agentic decision node (`RunAndValidate`) and a correction loop.
 
 **Flow high-level Design:**
-1.  **Generate Tests**: Takes a problem description and generates unit tests that a correct solution should pass.
-2.  **Implement Solution**: Takes the problem description and tests, and writes a Python function that solves the problem.
-3.  **Run and Validate**: Executes the generated tests against the generated solution to verify correctness.
+1.  **Generate Tests**: Takes a problem description and generates unit tests.
+2.  **Implement Solution**: Makes the first attempt at writing a Python function to solve the problem.
+3.  **Run and Validate**: Executes the tests. If they pass, the flow succeeds. If they fail, it transitions to the `ReviewAndCorrect` step.
+4.  **Review and Correct**: This agent node takes the failed code, tests, and error messages, and generates a new, corrected version of the code.
+5.  The flow then **loops** back to `RunAndValidate` to try the new solution. This continues until the tests pass or a maximum number of retries is reached.
 
 ```mermaid
 flowchart TD
-    subgraph CodeGeneration
+    subgraph AgenticCodeGeneration
         direction LR
         GenerateTests --> ImplementSolution
         ImplementSolution --> RunAndValidate
+        RunAndValidate -- "Success" --> Stop([End])
+        RunAndValidate -- "Failure" --> ReviewAndCorrect
+        ReviewAndCorrect --> RunAndValidate
     end
 ```
 
@@ -105,33 +110,39 @@ flowchart TD
 "problem_description": str, # Input from the user
 "generated_tests": str,     # Python code for the unit tests
 "generated_solution": str,  # Python code for the solution function
-"validation_result": dict   # Result from the RunAndValidate node
+"validation_result": dict,  # Result from the RunAndValidate node
+"error_logs": list[str],    # A log of errors from failed validation attempts
+"retry_count": int          # Counter to prevent infinite loops
 ```
 
 **Node Steps:**
 1. **GenerateTests**
-    - *Purpose*: To generate unit tests based on a problem description.
+    - *Purpose*: To generate unit tests from a problem description.
     - *Type*: Regular `Node`.
-    - *Steps*:
-      - *prep*: Reads `problem_description` from the shared store.
-      - *exec*: Calls `call_llm` to generate Python code for unit tests.
-      - *post*: Writes the `generated_tests` to the shared store and sends a progress update.
+    - *Steps*: (Same as before)
 
 2. **ImplementSolution**
-    - *Purpose*: To write a Python function that solves the problem and passes the generated tests.
+    - *Purpose*: To write the initial version of the solution code.
     - *Type*: Regular `Node`.
-    - *Steps*:
-      - *prep*: Reads `problem_description` and `generated_tests` from the shared store.
-      - *exec*: Calls `call_llm` to generate the solution function.
-      - *post*: Writes the `generated_solution` to the shared store and sends a progress update.
+    - *Steps*: (Same as before)
 
 3. **RunAndValidate**
-    - *Purpose*: To execute the generated tests against the generated solution.
+    - *Purpose*: To execute the tests and decide the next action.
     - *Type*: Regular `Node`.
     - *Steps*:
-      - *prep*: Reads `generated_solution` and `generated_tests` from the shared store.
-      - *exec*: Combines the solution and test code and uses the `execute_code` utility to run it.
-      - *post*: Writes the `validation_result` to the shared store and sends a completion message.
+      - *prep*: Reads `generated_solution` and `generated_tests`.
+      - *exec*: Uses the `execute_code` utility.
+      - *post*:
+        - If successful, returns the `"success"` action.
+        - If failed, updates `error_logs` in the shared store, increments `retry_count`, and returns the `"failure"` action. If max retries are reached, it returns a final failure action.
+
+4. **ReviewAndCorrect**
+    - *Purpose*: To debug the solution code based on test failures.
+    - *Type*: Regular `Node`.
+    - *Steps*:
+      - *prep*: Reads the `generated_solution`, `generated_tests`, and `error_logs`.
+      - *exec*: Calls `call_llm` with a prompt that includes the code, tests, and errors, asking it to provide a corrected version of the code.
+      - *post*: Overwrites the `generated_solution` in the shared store with the new, corrected code and sends a progress update.
 
 ## Common Utility Functions
 
