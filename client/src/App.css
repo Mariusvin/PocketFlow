@@ -78,6 +78,11 @@ main {
   margin-bottom: 20px;
 }
 
+.loading-message {
+  font-style: italic;
+  color: #555;
+}
+
 @media (max-width: 600px) {
   .input-section input {
     width: 100%;

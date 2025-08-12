@@ -5,22 +5,8 @@ function App() {
   const [keywords, setKeywords] = useState('');
   const [domains, setDomains] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState('');
-
-  const generateDomains = (keywords) => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        // Placeholder for AI-powered domain generation
-        const suffixes = ['.com', '.net', '.org', '.io'];
-        const generatedDomains = [];
-        suffixes.forEach(suffix => {
-          generatedDomains.push({ name: `${keywords.replace(/\s+/g, '')}${suffix}`, available: Math.random() > 0.5, price: `$${(Math.random() * 10 + 5).toFixed(2)}` });
-          generatedDomains.push({ name: `${keywords.replace(/\s+/g, 'hq')}${suffix}`, available: Math.random() > 0.5, price: `$${(Math.random() * 10 + 5).toFixed(2)}` });
-        });
-        resolve(generatedDomains);
-      }, 1000);
-    });
-  };
 
   const handleGenerate = async () => {
     if (!keywords.trim()) {
@@ -28,10 +14,57 @@ function App() {
       return;
     }
     setError('');
+    setDomains([]); // Clear previous results
     setLoading(true);
-    const newDomains = await generateDomains(keywords);
-    setDomains(newDomains);
-    setLoading(false);
+
+    try {
+      // Step 1: Generate suggestions from the AI
+      setLoadingMessage('Generating creative suggestions with AI...');
+      const suggestionsResponse = await fetch('http://localhost:3001/api/generate-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords }),
+      });
+
+      if (!suggestionsResponse.ok) {
+        const errorData = await suggestionsResponse.json();
+        throw new Error(errorData.error || 'Failed to get suggestions from the AI.');
+      }
+
+      const { suggestions } = await suggestionsResponse.json();
+
+      if (!suggestions || suggestions.length === 0) {
+        throw new Error('The AI did not return any suggestions. Try different keywords.');
+      }
+
+      // Step 2: Check availability of the generated suggestions
+      setLoadingMessage('Checking domain availability...');
+      const domainsWithPrice = suggestions.map(name => ({
+        name,
+        price: `$${(Math.random() * 10 + 5).toFixed(2)}` // Keep price placeholder for now
+      }));
+
+      const availabilityResponse = await fetch('http://localhost:3001/api/check-domains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domains: domainsWithPrice }),
+      });
+
+      if (!availabilityResponse.ok) {
+        const errorData = await availabilityResponse.json();
+        throw new Error(errorData.error || 'Failed to check domain availability.');
+      }
+
+      const results = await availabilityResponse.json();
+      setDomains(results);
+
+    } catch (error) {
+      console.error('An error occurred during the generation process:', error);
+      setError(error.message || 'An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+      setLoadingMessage('');
+    }
   };
 
   useEffect(() => {
@@ -60,7 +93,7 @@ function App() {
         {error && <p className="error">{error}</p>}
         <div className="results-section">
           {loading ? (
-            <p>Loading...</p>
+            <p className="loading-message">{loadingMessage}</p>
           ) : (
             domains.map((domain, index) => (
               <div key={index} className="domain-result">
