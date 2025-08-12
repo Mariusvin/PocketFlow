@@ -1,0 +1,46 @@
+namespace Activities.Shared.Restaurant
+{
+    public enum IngredientName
+    {
+        None = -1,
+        Avocado,
+        Bacon,
+        BeefPatty,
+        BellPepperGreen,
+        BellPepperYellow,
+        BellPepperRed,
+        BellPepperGreenSlice,
+        BellPepperYellowSlice,
+        BellPepperRedSlice,
+        Bread,
+        Broccoli,
+        Carrot,
+        CarrotSlice,
+        Cheese,
+        CheeseRound,
+        ChickenNugget,
+        Chilly,
+        Corn,
+        Croissant,
+        Cucumber,
+        CucumberSlice,
+        Egg,
+        EggFried,
+        FishNugget,
+        LemonSlice,
+        Lettuce,
+        Meatball,
+        Mushroom,
+        Pineapple,
+        PotatoSlice,
+        Salami,
+        Sausage,
+        Spinach,
+        TomatoYellow,
+        TomatoRed,
+        TomatoYellowSlice,
+        TomatoRedSlice,
+        Shrimp
+    }
+}
+
